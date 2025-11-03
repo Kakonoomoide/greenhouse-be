@@ -6,7 +6,9 @@ import { adminAuth } from "../lib/firebaseAdmin.js";
 export const checkAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Authorization token-nya mana?" });
+    return res
+      .status(401)
+      .json({ message: "Missing or invalid Authorization token." });
   }
 
   const idToken = authHeader.split(" ")[1];
@@ -18,7 +20,7 @@ export const checkAuth = async (req, res, next) => {
   } catch (error) {
     res
       .status(401)
-      .json({ message: "Token-nya invalid, bro", error: error.message });
+      .json({ message: "Invalid or expired token.", error: error.message });
   }
 };
 
@@ -27,7 +29,7 @@ export const checkSuperAdmin = (req, res, next) => {
   if (req.user.role !== "superAdmin") {
     return res
       .status(403)
-      .json({ message: "Akses ditolak. Only for Super Admin." });
+      .json({ message: "Access denied. Super Admin privileges required." });
   }
   next();
 };

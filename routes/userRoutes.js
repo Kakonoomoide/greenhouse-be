@@ -1,4 +1,4 @@
-// routes/user.routes.js
+// routes/userRoutes.js
 import { Router } from "express";
 import {
   getUserProfile,

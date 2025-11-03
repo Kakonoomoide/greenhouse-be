@@ -1,3 +1,4 @@
+// routes/logsRoutes.js
 import { Router } from "express";
 import { getSensorLogs, getAuditLogs } from "../controllers/logsController.js";
 import { checkAuth } from "../middleware/authMiddleware.js";

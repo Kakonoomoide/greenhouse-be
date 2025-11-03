@@ -1,8 +1,7 @@
-// controllers/logs.controller.js
+// controllers/logController.js
 import { adminDb } from "../lib/firebaseAdmin.js";
 import { successResponse, errorResponse } from "../utils/responseUtils.js";
 
-// Logic untuk BACA log sensor 7 hari
 export const getSensorLogs = async (req, res) => {
   try {
     const sevenDaysAgo = new Date();
@@ -15,15 +14,23 @@ export const getSensorLogs = async (req, res) => {
       .get();
 
     if (snapshot.empty) {
-      return errorResponse(res, "Nggak ada data sensor 7 hari terakhir", 404);
+      return errorResponse(
+        res,
+        "No sensor data found for the last 7 days.",
+        404
+      );
     }
 
     const logs = [];
     snapshot.forEach((doc) => logs.push(doc.data()));
 
-    return successResponse(res, logs, "Data sensor 7 hari berhasil diambil");
+    return successResponse(
+      res,
+      logs,
+      "Sensor data for the last 7 days retrieved successfully."
+    );
   } catch (error) {
-    return errorResponse(res, `Gagal ambil data: ${error.message}`, 500);
+    return errorResponse(res, `Failed to retrieve data: ${error.message}`, 500);
   }
 };
 
@@ -36,40 +43,61 @@ export const getAuditLogs = async (req, res) => {
       .get();
 
     if (snapshot.empty) {
-      return errorResponse(res, "Nggak ada data audit log", 404);
+      return errorResponse(res, "No audit log data found.", 404);
     }
 
     const logsPromises = snapshot.docs.map(async (doc) => {
       const logData = doc.data();
       const userId = logData.userId;
 
+      const originalEmail = logData.username;
+      delete logData.username;
+
       if (!userId) {
+        logData.user = {
+          email: originalEmail,
+          name: "Unknown User",
+        };
         return logData;
       }
 
       try {
         const userDoc = await adminDb.collection("users").doc(userId).get();
 
-        if (userDoc.exists()) {
+        if (userDoc.exists) {
           const userData = userDoc.data();
 
-          logData.username =
-            userData.name || userData.username || logData.username;
+          logData.user = {
+            email: userData.email || originalEmail,
+            name: userData.name || null,
+            phone: userData.phone || null,
+            role: userData.role || null,
+            username: userData.username || null,
+          };
+        } else {
+          logData.user = {
+            email: originalEmail,
+            name: "User Not Found",
+          };
         }
-
         return logData;
       } catch (userError) {
         console.error(
-          `Gagal fetch user data for userId ${userId}:`,
+          `Failed to fetch user data for userId ${userId}:`,
           userError.message
         );
+        logData.user = {
+          email: originalEmail,
+          name: "Error Fetching User",
+        };
         return logData;
       }
     });
     const logs = await Promise.all(logsPromises);
 
-    return successResponse(res, logs, "Data audit log berhasil diambil");
+    return successResponse(res, logs, "Audit log data retrieved successfully.");
+    _;
   } catch (error) {
-    return errorResponse(res, `Gagal ambil data: ${error.message}`, 500);
+    return errorResponse(res, `Failed to retrieve data: ${error.message}`, 500);
   }
 };

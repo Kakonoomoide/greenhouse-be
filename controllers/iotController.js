@@ -8,11 +8,15 @@ export const getIotStatus = async (req, res) => {
     const snapshot = await adminRtdb.ref("/iot1").once("value");
 
     if (!snapshot.exists()) {
-      return errorResponse(res, "Data IoT tidak ditemukan di path /iot1", 404);
+      return errorResponse(res, "IoT data not found at path /iot1", 404);
     }
-    return successResponse(res, snapshot.val(), "Data IoT berhasil diambil");
+    return successResponse(
+      res,
+      snapshot.val(),
+      "IoT data retrieved successfully."
+    );
   } catch (error) {
-    return errorResponse(res, `Gagal ambil data: ${error.message}`, 500);
+    return errorResponse(res, `Failed to retrieve data: ${error.message}`, 500);
   }
 };
 
@@ -22,11 +26,19 @@ export const getIotConfig = async (req, res) => {
     const snapshot = await adminRtdb.ref("/iot1/config").once("value");
 
     if (!snapshot.exists()) {
-      return errorResponse(res, "Data config IoT tidak ditemukan", 404);
+      return errorResponse(res, "IoT config data not found.", 404);
     }
-    return successResponse(res, snapshot.val(), "Config IoT berhasil diambil");
+    return successResponse(
+      res,
+      snapshot.val(),
+      "IoT config retrieved successfully."
+    );
   } catch (error) {
-    return errorResponse(res, `Gagal ambil config: ${error.message}`, 500);
+    return errorResponse(
+      res,
+      `Failed to retrieve config: ${error.message}`,
+      500
+    );
   }
 };
 
@@ -34,7 +46,11 @@ export const setMaxTemp = async (req, res) => {
   try {
     const { temp } = req.body;
     if (typeof temp !== "number") {
-      return errorResponse(res, 'Body request harus { "temp": (angka) }', 400);
+      return errorResponse(
+        res,
+        'Request body must be { "temp": (number) }',
+        400
+      );
     }
 
     await adminRtdb.ref("/iot1/config/maxTemp").set(temp);
@@ -50,10 +66,14 @@ export const setMaxTemp = async (req, res) => {
     return successResponse(
       res,
       { maxTemp: temp },
-      "Max temp berhasil di-update"
+      "Max temp updated successfully."
     );
   } catch (error) {
-    return errorResponse(res, `Gagal update max temp: ${error.message}`, 500);
+    return errorResponse(
+      res,
+      `Failed to update max temp: ${error.message}`,
+      500
+    );
   }
 };
 
@@ -63,7 +83,7 @@ export const setAutomationStatus = async (req, res) => {
     if (typeof status !== "boolean") {
       return errorResponse(
         res,
-        'Body request harus { "status": true/false }',
+        'Request body must be { "status": true/false }',
         400
       );
     }
@@ -81,10 +101,14 @@ export const setAutomationStatus = async (req, res) => {
     return successResponse(
       res,
       { automation: status },
-      "Status automation berhasil di-update"
+      "Automation status updated successfully."
     );
   } catch (error) {
-    return errorResponse(res, `Gagal update automation: ${error.message}`, 500);
+    return errorResponse(
+      res,
+      `Failed to update automation: ${error.message}`,
+      500
+    );
   }
 };
 
@@ -94,7 +118,7 @@ export const setBlowerStatus = async (req, res) => {
     if (typeof status !== "boolean") {
       return errorResponse(
         res,
-        'Body request harus { "status": true/false }',
+        'Request body must be { "status": true/false }',
         400
       );
     }
@@ -112,9 +136,9 @@ export const setBlowerStatus = async (req, res) => {
     return successResponse(
       res,
       { blower: status },
-      "Status blower berhasil di-update"
+      "Blower status updated successfully."
     );
   } catch (error) {
-    return errorResponse(res, `Gagal update blower: ${error.message}`, 500);
+    return errorResponse(res, `Failed to update blower: ${error.message}`, 500);
   }
 };

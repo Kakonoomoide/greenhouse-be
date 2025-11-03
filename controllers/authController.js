@@ -1,21 +1,20 @@
-// controllers/auth.controller.js
+// controllers/authController.js
 import fetch from "node-fetch";
 import { adminDb, adminAuth } from "../lib/firebaseAdmin.js";
 import { successResponse, errorResponse } from "../utils/responseUtils.js";
 
-// Logic untuk Register
 export const registerUser = async (req, res) => {
   const { email, password, name, role, username, noTelp } = req.body;
 
   if (!email || !password || !name || !username) {
     return errorResponse(
       res,
-      "Email, password, nama lengkap, dan username wajib diisi",
+      "Email, password, name, and username are required.",
       400
     );
   }
 
-  const userRole = role === "superAdmin" ? "superAdmin" : "adminUmum";
+  const userRole = role === "superAdmin" ? "superAdmin" : "admin";
 
   try {
     const usernameQuery = await adminDb
@@ -26,7 +25,7 @@ export const registerUser = async (req, res) => {
     if (!usernameQuery.empty) {
       return errorResponse(
         res,
-        "Username sudah dipakai, bro. Coba yang lain.",
+        "Username is already taken. Please try another.",
         400
       );
     }
@@ -40,7 +39,13 @@ export const registerUser = async (req, res) => {
       }
     );
     const data = await resp.json();
-    if (data.error) return errorResponse(res, data.error.message, 400);
+
+    if (data.error) {
+      if (data.error.message === "EMAIL_EXISTS") {
+        return errorResponse(res, "Email is already registered.", 400);
+      }
+      return errorResponse(res, data.error.message, 400);
+    }
 
     await adminAuth.setCustomUserClaims(data.localId, { role: userRole });
 
@@ -60,19 +65,18 @@ export const registerUser = async (req, res) => {
     return successResponse(
       res,
       { uid: data.localId },
-      "Registrasi berhasil",
+      "Registration successful.",
       201
     );
   } catch (error) {
-    return errorResponse(res, `Gagal register: ${error.message}`, 500);
+    return errorResponse(res, `Registration failed: ${error.message}`, 500);
   }
 };
 
-// Logic untuk Login (TETAP SAMA)
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
-    return errorResponse(res, "Email dan password wajib diisi", 400);
+    return errorResponse(res, "Email and password are required.", 400);
 
   try {
     const resp = await fetch(
@@ -85,7 +89,7 @@ export const loginUser = async (req, res) => {
     );
     const data = await resp.json();
     if (data.error) {
-      return errorResponse(res, "Email atau password salah", 401);
+      return errorResponse(res, "Invalid email or password.", 401);
     }
 
     const responseData = {
@@ -93,8 +97,8 @@ export const loginUser = async (req, res) => {
       refreshToken: data.refreshToken,
       uid: data.localId,
     };
-    return successResponse(res, responseData, "Login berhasil");
+    return successResponse(res, responseData, "Login successful.");
   } catch (error) {
-    return errorResponse(res, `Login gagal: ${error.message}`, 500);
+    return errorResponse(res, `Login failed: ${error.message}`, 500);
   }
 };

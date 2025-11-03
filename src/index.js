@@ -2,14 +2,16 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import allRoutes from "../routes/index.js"; // <-- IMPORT HUB-NYA
+import allRoutes from "../routes/index.js";
 
 dotenv.config();
+
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
-// Pasang semua routes ke /api
+// Pasang semua routes
 app.use("/api", allRoutes);
 
 // Error handling middleware

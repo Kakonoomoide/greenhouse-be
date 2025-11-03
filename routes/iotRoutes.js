@@ -1,4 +1,4 @@
-// routes/iot.routes.js
+// routes/iotRoutes.js
 import { Router } from "express";
 import {
   getIotStatus,
