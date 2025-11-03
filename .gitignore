@@ -1,0 +1,8 @@
+# Firebase admin SDK key
+firebase-admin-key.json
+
+# deps
+node_modules/
+
+# env
+.env
