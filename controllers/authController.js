@@ -5,14 +5,32 @@ import { successResponse, errorResponse } from "../utils/responseUtils.js";
 
 // Logic untuk Register
 export const registerUser = async (req, res) => {
-  const { email, password, name, role } = req.body;
+  const { email, password, name, role, username, noTelp } = req.body;
 
-  if (!email || !password)
-    return errorResponse(res, "Email dan password wajib diisi", 400);
+  if (!email || !password || !name || !username) {
+    return errorResponse(
+      res,
+      "Email, password, nama lengkap, dan username wajib diisi",
+      400
+    );
+  }
 
   const userRole = role === "superAdmin" ? "superAdmin" : "adminUmum";
 
   try {
+    const usernameQuery = await adminDb
+      .collection("users")
+      .where("username", "==", username)
+      .get();
+
+    if (!usernameQuery.empty) {
+      return errorResponse(
+        res,
+        "Username sudah dipakai, bro. Coba yang lain.",
+        400
+      );
+    }
+
     const resp = await fetch(
       `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${process.env.FIREBASE_API_KEY}`,
       {
@@ -31,8 +49,10 @@ export const registerUser = async (req, res) => {
       .doc(data.localId)
       .set({
         uid: data.localId,
-        email,
-        name: name || "",
+        email: email,
+        name: name,
+        username: username,
+        phone: noTelp || "",
         role: userRole,
         createdAt: new Date().toISOString(),
       });
@@ -48,7 +68,7 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// Logic untuk Login
+// Logic untuk Login (TETAP SAMA)
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)

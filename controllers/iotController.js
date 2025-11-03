@@ -1,5 +1,5 @@
-// controllers/iot.controller.js
-import { adminRtdb } from "../lib/firebaseAdmin.js";
+// controllers/iotController.js
+import { adminRtdb, adminDb } from "../lib/firebaseAdmin.js";
 import { successResponse, errorResponse } from "../utils/responseUtils.js";
 
 // Logic untuk BACA status sensor (dari path /iot1)
@@ -10,13 +10,11 @@ export const getIotStatus = async (req, res) => {
     if (!snapshot.exists()) {
       return errorResponse(res, "Data IoT tidak ditemukan di path /iot1", 404);
     }
-    // isinya: { temp: 28, humbd: 80, hic: 32 }
     return successResponse(res, snapshot.val(), "Data IoT berhasil diambil");
   } catch (error) {
     return errorResponse(res, `Gagal ambil data: ${error.message}`, 500);
   }
 };
-
 
 // Logic untuk BACA SEMUA CONFIG (automation, blower, maxTemp)
 export const getIotConfig = async (req, res) => {
@@ -26,28 +24,28 @@ export const getIotConfig = async (req, res) => {
     if (!snapshot.exists()) {
       return errorResponse(res, "Data config IoT tidak ditemukan", 404);
     }
-    // isinya: { automation: true, blower: false, maxTemp: 30 }
     return successResponse(res, snapshot.val(), "Config IoT berhasil diambil");
   } catch (error) {
     return errorResponse(res, `Gagal ambil config: ${error.message}`, 500);
   }
 };
 
-// Logic untuk SET maxTemp (Super Admin)
 export const setMaxTemp = async (req, res) => {
   try {
-    const { temp } = req.body; // Expect { "temp": 30 }
-
+    const { temp } = req.body;
     if (typeof temp !== "number") {
-      return errorResponse(
-        res,
-        'Body request harus { "temp": (angka) }',
-        400
-      );
+      return errorResponse(res, 'Body request harus { "temp": (angka) }', 400);
     }
 
-    // Tulis data ke path config
     await adminRtdb.ref("/iot1/config/maxTemp").set(temp);
+
+    await adminDb.collection("audit_logs").add({
+      action: "set_max_temp",
+      newValue: temp,
+      userId: req.user.uid,
+      username: req.user.name || req.user.email,
+      timestamp: new Date().toISOString(),
+    });
 
     return successResponse(
       res,
@@ -58,13 +56,10 @@ export const setMaxTemp = async (req, res) => {
     return errorResponse(res, `Gagal update max temp: ${error.message}`, 500);
   }
 };
-// --- END: TAMBAHAN BARU ---
 
-// Logic untuk SET status automation (Super Admin)
 export const setAutomationStatus = async (req, res) => {
   try {
-    const { status } = req.body; // Expect { "status": true } or { "status": false }
-
+    const { status } = req.body;
     if (typeof status !== "boolean") {
       return errorResponse(
         res,
@@ -74,6 +69,14 @@ export const setAutomationStatus = async (req, res) => {
     }
 
     await adminRtdb.ref("/iot1/config/automation").set(status);
+
+    await adminDb.collection("audit_logs").add({
+      action: "set_automation_status",
+      newValue: status,
+      userId: req.user.uid,
+      username: req.user.name || req.user.email,
+      timestamp: new Date().toISOString(),
+    });
 
     return successResponse(
       res,
@@ -85,11 +88,9 @@ export const setAutomationStatus = async (req, res) => {
   }
 };
 
-// Logic untuk SET status blower (Super Admin)
 export const setBlowerStatus = async (req, res) => {
   try {
-    const { status } = req.body; // Expect { "status": true } or { "status": false }
-
+    const { status } = req.body;
     if (typeof status !== "boolean") {
       return errorResponse(
         res,
@@ -99,6 +100,14 @@ export const setBlowerStatus = async (req, res) => {
     }
 
     await adminRtdb.ref("/iot1/config/blower").set(status);
+
+    await adminDb.collection("audit_logs").add({
+      action: "set_blower_status",
+      newValue: status,
+      userId: req.user.uid,
+      username: req.user.name || req.user.email,
+      timestamp: new Date().toISOString(),
+    });
 
     return successResponse(
       res,

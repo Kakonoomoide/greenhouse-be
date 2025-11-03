@@ -16,8 +16,8 @@ router.get("/status", checkAuth, getIotStatus);
 router.get("/config", checkAuth, getIotConfig);
 
 // --- WRITE Endpoints (Hanya Super Admin) ---
-router.post("/automation", checkAuth, checkSuperAdmin, setAutomationStatus);
-router.post("/blower", checkAuth, checkSuperAdmin, setBlowerStatus);
-router.post("/maxtemp", checkAuth, checkSuperAdmin, setMaxTemp); // <-- ROUTE BARU
+router.post("/automation", checkAuth, setAutomationStatus);
+router.post("/blower", checkAuth, setBlowerStatus);
+router.post("/maxtemp", checkAuth, checkSuperAdmin, setMaxTemp);
 
 export default router;

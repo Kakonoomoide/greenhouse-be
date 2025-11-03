@@ -16,6 +16,66 @@ export const getUserProfile = async (req, res) => {
   }
 };
 
+// Ganti Password
+export const changePassword = async (req, res) => {
+  const { uid } = req.user;
+  const { newPassword } = req.body;
+
+  if (!newPassword || newPassword.length < 6) {
+    return errorResponse(res, "Password baru minimal 6 karakter", 400);
+  }
+
+  try {
+    await adminAuth.updateUser(uid, {
+      password: newPassword,
+    });
+
+    return successResponse(res, null, "Password berhasil diubah");
+  } catch (error) {
+    return errorResponse(res, `Gagal ubah password: ${error.message}`, 500);
+  }
+};
+
+// Edit Profile
+export const updateUserProfile = async (req, res) => {
+  const { uid } = req.user; // UID dari user yang lagi login
+  const { name, username, noTelp } = req.body;
+
+  const dataToUpdate = {};
+  if (name) dataToUpdate.name = name;
+  if (noTelp !== undefined) dataToUpdate.phone = noTelp || "";
+  if (username) dataToUpdate.username = username;
+
+  if (Object.keys(dataToUpdate).length === 0) {
+    return errorResponse(res, "Nggak ada data buat di-update", 400);
+  }
+
+  try {
+    // Kalo user ganti username, cek duplikat
+    if (username) {
+      const usernameQuery = await adminDb
+        .collection("users")
+        .where("username", "==", username)
+        .get();
+
+      if (!usernameQuery.empty) {
+        const existingUser = usernameQuery.docs[0].data();
+        // Cek kalo username itu dipake orang lain
+        if (existingUser.uid !== uid) {
+          return errorResponse(res, "Username sudah dipakai, bro", 400);
+        }
+      }
+    }
+
+    // Update data di Firestore
+    await adminDb.collection("users").doc(uid).update(dataToUpdate);
+
+    return successResponse(res, dataToUpdate, "Profile berhasil di-update");
+  } catch (error) {
+    return errorResponse(res, `Gagal update profile: ${error.message}`, 500);
+  }
+};
+
 // Logic untuk admin
 export const getAdminUsers = (req, res) => {
   const data = {
