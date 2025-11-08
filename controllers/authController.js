@@ -92,10 +92,21 @@ export const loginUser = async (req, res) => {
       return errorResponse(res, "Invalid email or password.", 401);
     }
 
+    const userRecord = await adminDb
+      .collection("users")
+      .doc(data.localId)
+      .get();
+    const userData = userRecord.data();
+
+    if (!userData || !userData.role) {
+      return errorResponse(res, "User role not found.", 404);
+    }
+
     const responseData = {
       idToken: data.idToken,
       refreshToken: data.refreshToken,
       uid: data.localId,
+      role: userData.role,
     };
     return successResponse(res, responseData, "Login successful.");
   } catch (error) {
