@@ -7,7 +7,7 @@ import {
   getIotConfig,
   setMaxTemp,
 } from "../controllers/iotController.js";
-import { checkAuth, checkSuperAdmin } from "../middleware/authMiddleware.js";
+import { checkAuth, checkIsAdmin } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
@@ -18,6 +18,6 @@ router.get("/config", checkAuth, getIotConfig);
 // --- WRITE Endpoints (Hanya Super Admin) ---
 router.post("/automation", checkAuth, setAutomationStatus);
 router.post("/blower", checkAuth, setBlowerStatus);
-router.post("/maxtemp", checkAuth, checkSuperAdmin, setMaxTemp);
+router.post("/maxtemp", checkAuth, checkIsAdmin, setMaxTemp);
 
 export default router;

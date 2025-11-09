@@ -6,13 +6,13 @@ import {
   updateUserProfile,
   changePassword,
 } from "../controllers/userController.js";
-import { checkAuth, checkSuperAdmin } from "../middleware/authMiddleware.js";
+import { checkAuth, checkIsAdmin } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
 router.get("/profile", checkAuth, getUserProfile);
 router.put("/profile", checkAuth, updateUserProfile);
-router.get("/admin/users", checkAuth, checkSuperAdmin, getAdminUsers);
+router.get("/admin/users", checkAuth, checkIsAdmin, getAdminUsers);
 router.post("/profile/change-password", checkAuth, changePassword);
 
 export default router;

@@ -25,11 +25,11 @@ export const checkAuth = async (req, res, next) => {
 };
 
 // Cek kalo user adalah Super Admin
-export const checkSuperAdmin = (req, res, next) => {
-  if (req.user.role !== "superAdmin") {
+export const checkIsAdmin = (req, res, next) => {
+  if (req.user.role !== "admin") {
     return res
       .status(403)
-      .json({ message: "Access denied. Super Admin privileges required." });
+      .json({ message: "Access denied. Admin privileges required." });
   }
   next();
 };

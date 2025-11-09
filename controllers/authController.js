@@ -3,6 +3,7 @@ import fetch from "node-fetch";
 import { adminDb, adminAuth } from "../lib/firebaseAdmin.js";
 import { successResponse, errorResponse } from "../utils/responseUtils.js";
 
+// REGISTER USER
 export const registerUser = async (req, res) => {
   const { email, password, name, role, username, noTelp } = req.body;
 
@@ -14,7 +15,7 @@ export const registerUser = async (req, res) => {
     );
   }
 
-  const userRole = role === "superAdmin" ? "superAdmin" : "admin";
+  const userRole = role === "admin" ? "admin" : "farmer";
 
   try {
     const usernameQuery = await adminDb
@@ -47,25 +48,30 @@ export const registerUser = async (req, res) => {
       return errorResponse(res, data.error.message, 400);
     }
 
-    await adminAuth.setCustomUserClaims(data.localId, { role: userRole });
+    const uid = data.localId;
+
+    console.log(`Setting custom claims for user ${uid}: ${userRole}`);
+    await adminAuth.setCustomUserClaims(uid, { role: userRole });
 
     await adminDb
       .collection("users")
-      .doc(data.localId)
+      .doc(uid)
       .set({
-        uid: data.localId,
-        email: email,
-        name: name,
-        username: username,
+        uid,
+        email,
+        name,
+        username,
         phone: noTelp || "",
         role: userRole,
         createdAt: new Date().toISOString(),
       });
 
+    await adminAuth.revokeRefreshTokens(uid);
+
     return successResponse(
       res,
-      { uid: data.localId },
-      "Registration successful.",
+      { uid },
+      "Registration successful. Please login again.",
       201
     );
   } catch (error) {
@@ -73,6 +79,7 @@ export const registerUser = async (req, res) => {
   }
 };
 
+// LOGIN USER
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
@@ -88,26 +95,31 @@ export const loginUser = async (req, res) => {
       }
     );
     const data = await resp.json();
+
     if (data.error) {
       return errorResponse(res, "Invalid email or password.", 401);
     }
 
-    const userRecord = await adminDb
-      .collection("users")
-      .doc(data.localId)
-      .get();
-    const userData = userRecord.data();
+    const uid = data.localId;
+
+    const userDoc = await adminDb.collection("users").doc(uid).get();
+    const userData = userDoc.data();
 
     if (!userData || !userData.role) {
       return errorResponse(res, "User role not found.", 404);
     }
 
+    const decodedToken = await adminAuth.verifyIdToken(data.idToken, true);
+
+    const roleFromToken = decodedToken.role || userData.role;
+
     const responseData = {
       idToken: data.idToken,
       refreshToken: data.refreshToken,
-      uid: data.localId,
-      role: userData.role,
+      uid,
+      role: roleFromToken,
     };
+
     return successResponse(res, responseData, "Login successful.");
   } catch (error) {
     return errorResponse(res, `Login failed: ${error.message}`, 500);
