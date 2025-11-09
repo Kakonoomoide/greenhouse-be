@@ -96,7 +96,6 @@ export const getAuditLogs = async (req, res) => {
     const logs = await Promise.all(logsPromises);
 
     return successResponse(res, logs, "Audit log data retrieved successfully.");
-    _;
   } catch (error) {
     return errorResponse(res, `Failed to retrieve data: ${error.message}`, 500);
   }

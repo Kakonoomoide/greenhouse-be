@@ -24,7 +24,7 @@ export const checkAuth = async (req, res, next) => {
   }
 };
 
-// Cek kalo user adalah Super Admin
+// Cek kalo user adalah Admin
 export const checkIsAdmin = (req, res, next) => {
   if (req.user.role !== "admin") {
     return res

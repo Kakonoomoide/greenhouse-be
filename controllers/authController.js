@@ -50,7 +50,6 @@ export const registerUser = async (req, res) => {
 
     const uid = data.localId;
 
-    console.log(`Setting custom claims for user ${uid}: ${userRole}`);
     await adminAuth.setCustomUserClaims(uid, { role: userRole });
 
     await adminDb
