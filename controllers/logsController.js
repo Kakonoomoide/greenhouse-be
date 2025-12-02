@@ -66,10 +66,6 @@ export const recordSensorLog = async (req, res) => {
 
       finalTemp = Math.max(currentTemp, existingData.temp || 0);
       finalHumid = Math.max(currentHumid, existingData.humidity || 0);
-
-      console.log(
-        `Compare: New(${currentTemp}) vs Old(${existingData.temp}) -> Winner: ${finalTemp}`
-      );
     }
 
     await logRef.set(
