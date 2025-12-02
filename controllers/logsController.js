@@ -1,5 +1,5 @@
 // controllers/logController.js
-import { adminDb } from "../lib/firebaseAdmin.js";
+import { adminDb, adminRtdb } from "../lib/firebaseAdmin.js";
 import { successResponse, errorResponse } from "../utils/responseUtils.js";
 
 export const getSensorLogs = async (req, res) => {
@@ -31,6 +31,59 @@ export const getSensorLogs = async (req, res) => {
     );
   } catch (error) {
     return errorResponse(res, `Failed to retrieve data: ${error.message}`, 500);
+  }
+};
+
+export const recordSensorLog = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return errorResponse(res, "Unauthorized request", 401);
+    }
+
+    const snapshot = await adminRtdb.ref("/iot1").once("value");
+    const data = snapshot.val();
+
+    if (!data) {
+      return errorResponse(res, "No IoT data found in RTDB", 404);
+    }
+
+    const currentTemp = data.temp || 0;
+    const currentHumid = data.humidity || 0;
+    const timestamp = new Date().toISOString();
+
+    await adminDb.collection("sensor_logs").add({
+      temp: currentTemp,
+      humidity: currentHumid,
+      timestamp: timestamp,
+      createdAt: new Date(),
+    });
+
+    const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+    const oldLogsSnapshot = await adminDb
+      .collection("sensor_logs")
+      .where("createdAt", "<", twoWeeksAgo)
+      .get();
+
+    if (!oldLogsSnapshot.empty) {
+      const batch = adminDb.batch();
+      oldLogsSnapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+    }
+
+    return successResponse(
+      res,
+      {
+        savedData: { temp: currentTemp, humidity: currentHumid, timestamp },
+        deletedCount: oldLogsSnapshot.size,
+      },
+      "Cron job executed successfully."
+    );
+  } catch (error) {
+    return errorResponse(res, `Cron job failed: ${error.message}`, 500);
   }
 };
 

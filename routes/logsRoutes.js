@@ -4,6 +4,7 @@ import {
   getSensorLogs,
   getAuditLogs,
   getSystemLogs,
+  recordSensorLog,
 } from "../controllers/logsController.js";
 import { checkAuth, checkIsAdmin } from "../middleware/authMiddleware.js";
 
@@ -12,5 +13,5 @@ const router = Router();
 router.get("/sensor-logs", checkAuth, getSensorLogs);
 router.get("/audit-logs", checkAuth, getAuditLogs);
 router.get("/system-logs", checkAuth, checkIsAdmin, getSystemLogs);
-
+router.post("/cron/record", recordSensorLog);
 export default router;
