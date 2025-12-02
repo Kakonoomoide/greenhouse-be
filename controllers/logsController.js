@@ -36,6 +36,7 @@ export const getSensorLogs = async (req, res) => {
 
 export const recordSensorLog = async (req, res) => {
   try {
+    // 1. Security Check
     const authHeader = req.headers.authorization;
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return errorResponse(res, "Unauthorized request", 401);
@@ -50,14 +51,37 @@ export const recordSensorLog = async (req, res) => {
 
     const currentTemp = data.temp || 0;
     const currentHumid = data.humbd || 0;
-    const timestamp = new Date().toISOString();
 
-    await adminDb.collection("sensor_logs").add({
-      temp: currentTemp,
-      humidity: currentHumid,
-      timestamp: timestamp,
-      createdAt: new Date(),
-    });
+    const now = new Date();
+    const docId = now.toISOString().split("T")[0];
+
+    const logRef = adminDb.collection("sensor_logs").doc(docId);
+    const docSnap = await logRef.get();
+
+    let finalTemp = currentTemp;
+    let finalHumid = currentHumid;
+
+    if (docSnap.exists) {
+      const existingData = docSnap.data();
+
+      finalTemp = Math.max(currentTemp, existingData.temp || 0);
+      finalHumid = Math.max(currentHumid, existingData.humidity || 0);
+
+      console.log(
+        `Compare: New(${currentTemp}) vs Old(${existingData.temp}) -> Winner: ${finalTemp}`
+      );
+    }
+
+    await logRef.set(
+      {
+        temp: finalTemp,
+        humidity: finalHumid,
+        lastUpdated: now.toISOString(),
+        createdAt: now,
+        docId: docId,
+      },
+      { merge: true }
+    );
 
     const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
@@ -69,7 +93,9 @@ export const recordSensorLog = async (req, res) => {
     if (!oldLogsSnapshot.empty) {
       const batch = adminDb.batch();
       oldLogsSnapshot.docs.forEach((doc) => {
-        batch.delete(doc.ref);
+        if (doc.id !== docId) {
+          batch.delete(doc.ref);
+        }
       });
       await batch.commit();
     }
@@ -77,12 +103,18 @@ export const recordSensorLog = async (req, res) => {
     return successResponse(
       res,
       {
-        savedData: { temp: currentTemp, humidity: currentHumid, timestamp },
+        docId: docId,
+        savedData: {
+          maxTempToday: finalTemp,
+          maxHumidToday: finalHumid,
+          currentScan: { temp: currentTemp, humidity: currentHumid },
+        },
         deletedCount: oldLogsSnapshot.size,
       },
-      "Cron job executed successfully."
+      "Cron job executed: Updated daily max values."
     );
   } catch (error) {
+    console.error("Cron Error:", error);
     return errorResponse(res, `Cron job failed: ${error.message}`, 500);
   }
 };
