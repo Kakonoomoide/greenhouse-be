@@ -49,7 +49,7 @@ export const recordSensorLog = async (req, res) => {
     }
 
     const currentTemp = data.temp || 0;
-    const currentHumid = data.humidity || 0;
+    const currentHumid = data.humbd || 0;
     const timestamp = new Date().toISOString();
 
     await adminDb.collection("sensor_logs").add({
