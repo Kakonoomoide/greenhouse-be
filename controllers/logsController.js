@@ -100,3 +100,90 @@ export const getAuditLogs = async (req, res) => {
     return errorResponse(res, `Failed to retrieve data: ${error.message}`, 500);
   }
 };
+
+export const getSystemLogs = async (req, res) => {
+  try {
+    const limitCount = parseInt(req.query.limit) || 50;
+
+    // Ambil logs terbaru
+    const snapshot = await adminDb
+      .collection("system_logs")
+      .orderBy("timestamp", "desc")
+      .limit(limitCount)
+      .get();
+
+    if (snapshot.empty) {
+      return errorResponse(res, "No system log data found.", 404);
+    }
+
+    const logsPromises = snapshot.docs.map(async (doc) => {
+      const logData = doc.data();
+      const actorUid =
+        logData.actorUid || logData.deletedBy || logData.createdBy;
+
+      // Hapus raw field agar tidak ganda
+      delete logData.deletedBy;
+      delete logData.createdBy;
+
+      // Jika tidak ada actorUid → unknown
+      if (!actorUid) {
+        logData.actor = {
+          uid: null,
+          name: "Unknown Actor",
+          email: null,
+          role: null,
+        };
+        return logData;
+      }
+
+      try {
+        const userDoc = await adminDb.collection("users").doc(actorUid).get();
+
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          logData.actor = {
+            uid: actorUid,
+            name: userData.name || null,
+            email: userData.email || null,
+            role: userData.role || null,
+            username: userData.username || null,
+          };
+        } else {
+          logData.actor = {
+            uid: actorUid,
+            name: "User Not Found",
+            email: null,
+            role: null,
+          };
+        }
+      } catch (err) {
+        console.error(
+          `Failed to fetch actor user data for ${actorUid}:`,
+          err.message
+        );
+        logData.actor = {
+          uid: actorUid,
+          name: "Error Fetching User",
+          email: null,
+          role: null,
+        };
+      }
+
+      return logData;
+    });
+
+    const logs = await Promise.all(logsPromises);
+
+    return successResponse(
+      res,
+      logs,
+      "System log data retrieved successfully."
+    );
+  } catch (error) {
+    return errorResponse(
+      res,
+      `Failed to retrieve system logs: ${error.message}`,
+      500
+    );
+  }
+};

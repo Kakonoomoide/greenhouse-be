@@ -18,6 +18,7 @@ export const registerUser = async (req, res) => {
   const userRole = role === "admin" ? "admin" : "farmer";
 
   try {
+    // Cek username unik
     const usernameQuery = await adminDb
       .collection("users")
       .where("username", "==", username)
@@ -31,6 +32,7 @@ export const registerUser = async (req, res) => {
       );
     }
 
+    // Register via Identity Toolkit
     const resp = await fetch(
       `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${process.env.FIREBASE_API_KEY}`,
       {
@@ -50,29 +52,33 @@ export const registerUser = async (req, res) => {
 
     const uid = data.localId;
 
+    // Set custom claims
     await adminAuth.setCustomUserClaims(uid, { role: userRole });
 
-    await adminDb
-      .collection("users")
-      .doc(uid)
-      .set({
-        uid,
-        email,
-        name,
-        username,
-        phone: noTelp || "",
-        role: userRole,
-        createdAt: new Date().toISOString(),
-      });
+    // Simpan user ke Firestore
+    const savedUserData = {
+      uid,
+      email,
+      name,
+      username,
+      phone: noTelp || "",
+      role: userRole,
+      createdAt: new Date().toISOString(),
+      isDeleted: false,
+    };
 
-    await adminAuth.revokeRefreshTokens(uid);
+    await adminDb.collection("users").doc(uid).set(savedUserData);
 
-    return successResponse(
-      res,
-      { uid },
-      "Registration successful. Please login again.",
-      201
-    );
+    // === SYSTEM LOGS ===
+    await adminDb.collection("system_logs").add({
+      action: "REGISTER_USER",
+      targetUid: uid,
+      payload: savedUserData, // apa yang disimpan
+      firebaseResponse: data, // respon API Firebase
+      timestamp: new Date().toISOString(),
+    });
+
+    return successResponse(res, { uid }, "Registration successful.", 201);
   } catch (error) {
     return errorResponse(res, `Registration failed: ${error.message}`, 500);
   }
@@ -81,6 +87,7 @@ export const registerUser = async (req, res) => {
 // LOGIN USER
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
+
   if (!email || !password)
     return errorResponse(res, "Email and password are required.", 400);
 
@@ -93,6 +100,7 @@ export const loginUser = async (req, res) => {
         body: JSON.stringify({ email, password, returnSecureToken: true }),
       }
     );
+
     const data = await resp.json();
 
     if (data.error) {
@@ -102,13 +110,28 @@ export const loginUser = async (req, res) => {
     const uid = data.localId;
 
     const userDoc = await adminDb.collection("users").doc(uid).get();
+    if (!userDoc.exists)
+      return errorResponse(res, "User not found in database.", 404);
+
     const userData = userDoc.data();
 
-    if (!userData || !userData.role) {
-      return errorResponse(res, "User role not found.", 404);
+    if (userData.isDeleted) {
+      return errorResponse(
+        res,
+        "This account has been deleted. Please contact admin.",
+        403
+      );
     }
 
     const decodedToken = await adminAuth.verifyIdToken(data.idToken, true);
+
+    if (decodedToken.isDeleted === true) {
+      return errorResponse(
+        res,
+        "This account has been deleted. Please contact admin.",
+        403
+      );
+    }
 
     const roleFromToken = decodedToken.role || userData.role;
 
