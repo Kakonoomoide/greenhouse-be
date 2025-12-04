@@ -2,143 +2,148 @@
 import { adminRtdb, adminDb } from "../lib/firebaseAdmin.js";
 import { successResponse, errorResponse } from "../utils/responseUtils.js";
 
-// Logic untuk BACA status sensor (dari path /iot1)
+/* -------------------------------------------------------------------------- */
+/*                                🔧 Helpers                                   */
+/* -------------------------------------------------------------------------- */
+
+// Helper: Ambil data dari RTDB
+const readRtdb = async (path) => {
+  const snapshot = await adminRtdb.ref(path).once("value");
+
+  if (!snapshot.exists()) {
+    throw new Error(`RTDB data not found at path: ${path}`);
+  }
+
+  return snapshot.val();
+};
+
+// Helper: Update config di RTDB
+const updateConfig = async (path, value) => {
+  await adminRtdb.ref(path).set(value);
+};
+
+// Helper: Tambah audit log
+const addAuditLog = async (action, newValue, user) => {
+  await adminDb.collection("audit_logs").add({
+    action,
+    newValue,
+    userId: user.uid,
+    username: user.name || user.email,
+    timestamp: new Date().toISOString(),
+  });
+};
+
+/* -------------------------------------------------------------------------- */
+/*                          📌 Get IoT Status (/iot1)                          */
+/* -------------------------------------------------------------------------- */
+
 export const getIotStatus = async (req, res) => {
   try {
-    const snapshot = await adminRtdb.ref("/iot1").once("value");
+    const data = await readRtdb("/iot1");
 
-    if (!snapshot.exists()) {
-      return errorResponse(res, "IoT data not found at path /iot1", 404);
-    }
-    return successResponse(
-      res,
-      snapshot.val(),
-      "IoT data retrieved successfully."
-    );
-  } catch (error) {
-    return errorResponse(res, `Failed to retrieve data: ${error.message}`, 500);
+    return successResponse(res, data, "IoT data retrieved successfully.");
+  } catch (err) {
+    return errorResponse(res, err.message, 404);
   }
 };
 
-// Logic untuk BACA SEMUA CONFIG (automation, blower, maxTemp)
+/* -------------------------------------------------------------------------- */
+/*                      📌 Get IoT Config (/iot1/config)                       */
+/* -------------------------------------------------------------------------- */
+
 export const getIotConfig = async (req, res) => {
   try {
-    const snapshot = await adminRtdb.ref("/iot1/config").once("value");
+    const config = await readRtdb("/iot1/config");
 
-    if (!snapshot.exists()) {
-      return errorResponse(res, "IoT config data not found.", 404);
-    }
-    return successResponse(
-      res,
-      snapshot.val(),
-      "IoT config retrieved successfully."
-    );
-  } catch (error) {
-    return errorResponse(
-      res,
-      `Failed to retrieve config: ${error.message}`,
-      500
-    );
+    return successResponse(res, config, "IoT config retrieved successfully.");
+  } catch (err) {
+    return errorResponse(res, err.message, 404);
   }
 };
+
+/* -------------------------------------------------------------------------- */
+/*                      📌 Update Max Temp (config/maxTemp)                    */
+/* -------------------------------------------------------------------------- */
 
 export const setMaxTemp = async (req, res) => {
   try {
     const { temp } = req.body;
+
     if (typeof temp !== "number") {
-      return errorResponse(
-        res,
-        'Request body must be { "temp": (number) }',
-        400
-      );
+      return errorResponse(res, 'Request body must be { "temp": number }', 400);
     }
 
-    await adminRtdb.ref("/iot1/config/maxTemp").set(temp);
-
-    await adminDb.collection("audit_logs").add({
-      action: "set_max_temp",
-      newValue: temp,
-      userId: req.user.uid,
-      username: req.user.name || req.user.email,
-      timestamp: new Date().toISOString(),
-    });
+    await updateConfig("/iot1/config/maxTemp", temp);
+    await addAuditLog("set_max_temp", temp, req.user);
 
     return successResponse(
       res,
       { maxTemp: temp },
       "Max temp updated successfully."
     );
-  } catch (error) {
-    return errorResponse(
-      res,
-      `Failed to update max temp: ${error.message}`,
-      500
-    );
+  } catch (err) {
+    return errorResponse(res, `Failed to update max temp: ${err.message}`, 500);
   }
 };
+
+/* -------------------------------------------------------------------------- */
+/*                  📌 Update Automation Status (config/automation)            */
+/* -------------------------------------------------------------------------- */
 
 export const setAutomationStatus = async (req, res) => {
   try {
     const { status } = req.body;
+
     if (typeof status !== "boolean") {
       return errorResponse(
         res,
-        'Request body must be { "status": true/false }',
+        'Request body must be { "status": boolean }',
         400
       );
     }
 
-    await adminRtdb.ref("/iot1/config/automation").set(status);
-
-    await adminDb.collection("audit_logs").add({
-      action: "set_automation_status",
-      newValue: status,
-      userId: req.user.uid,
-      username: req.user.name || req.user.email,
-      timestamp: new Date().toISOString(),
-    });
+    await updateConfig("/iot1/config/automation", status);
+    await addAuditLog("set_automation_status", status, req.user);
 
     return successResponse(
       res,
       { automation: status },
       "Automation status updated successfully."
     );
-  } catch (error) {
+  } catch (err) {
     return errorResponse(
       res,
-      `Failed to update automation: ${error.message}`,
+      `Failed to update automation: ${err.message}`,
       500
     );
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                    📌 Update Blower Status (config/blower)                  */
+/* -------------------------------------------------------------------------- */
+
 export const setBlowerStatus = async (req, res) => {
   try {
     const { status } = req.body;
+
     if (typeof status !== "boolean") {
       return errorResponse(
         res,
-        'Request body must be { "status": true/false }',
+        'Request body must be { "status": boolean }',
         400
       );
     }
 
-    await adminRtdb.ref("/iot1/config/blower").set(status);
-
-    await adminDb.collection("audit_logs").add({
-      action: "set_blower_status",
-      newValue: status,
-      userId: req.user.uid,
-      username: req.user.name || req.user.email,
-      timestamp: new Date().toISOString(),
-    });
+    await updateConfig("/iot1/config/blower", status);
+    await addAuditLog("set_blower_status", status, req.user);
 
     return successResponse(
       res,
       { blower: status },
       "Blower status updated successfully."
     );
-  } catch (error) {
-    return errorResponse(res, `Failed to update blower: ${error.message}`, 500);
+  } catch (err) {
+    return errorResponse(res, `Failed to update blower: ${err.message}`, 500);
   }
 };

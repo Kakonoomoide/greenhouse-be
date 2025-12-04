@@ -268,7 +268,7 @@ Sebagian besar endpoint butuh **Header Authorization**.
       "message": "System log data retrieved successfully.",
       "data": [
         {
-          "action": "SOFT_DELETE_USER",
+          "action": "soft_delete_user",
           "targetUid": "ZCJFHh1Up...",
           "actorUid": "lY2hvov3...",
           "payload": {

@@ -3,7 +3,53 @@ import fetch from "node-fetch";
 import { adminDb, adminAuth } from "../lib/firebaseAdmin.js";
 import { successResponse, errorResponse } from "../utils/responseUtils.js";
 
-// REGISTER USER
+/* -------------------------------------------------------------------------- */
+/*                                 🔧 Helpers                                  */
+/* -------------------------------------------------------------------------- */
+
+// Firebase Identity Toolkit wrapper
+const firebaseAuthRequest = async (url, body) => {
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const data = await resp.json();
+
+  if (data.error) throw new Error(data.error.message);
+
+  return data;
+};
+
+// Check unique username
+const isUsernameTaken = async (username) => {
+  const snapshot = await adminDb
+    .collection("users")
+    .where("username", "==", username)
+    .get();
+
+  return !snapshot.empty;
+};
+
+// Save new user to Firestore
+const saveUserToFirestore = async (uid, payload) => {
+  await adminDb.collection("users").doc(uid).set(payload);
+};
+
+// Add system log
+const logSystemEvent = async (action, extra = {}) => {
+  await adminDb.collection("system_logs").add({
+    action,
+    timestamp: new Date().toISOString(),
+    ...extra,
+  });
+};
+
+/* -------------------------------------------------------------------------- */
+/*                              📌 REGISTER USER                               */
+/* -------------------------------------------------------------------------- */
+
 export const registerUser = async (req, res) => {
   const { email, password, name, role, username, noTelp } = req.body;
 
@@ -19,12 +65,7 @@ export const registerUser = async (req, res) => {
 
   try {
     // Cek username unik
-    const usernameQuery = await adminDb
-      .collection("users")
-      .where("username", "==", username)
-      .get();
-
-    if (!usernameQuery.empty) {
+    if (await isUsernameTaken(username)) {
       return errorResponse(
         res,
         "Username is already taken. Please try another.",
@@ -32,31 +73,27 @@ export const registerUser = async (req, res) => {
       );
     }
 
-    // Register via Identity Toolkit
-    const resp = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${process.env.FIREBASE_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, returnSecureToken: true }),
-      }
-    );
-    const data = await resp.json();
-
-    if (data.error) {
-      if (data.error.message === "EMAIL_EXISTS") {
+    // REGISTER FIREBASE AUTH
+    let data;
+    try {
+      data = await firebaseAuthRequest(
+        `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${process.env.FIREBASE_API_KEY}`,
+        { email, password, returnSecureToken: true }
+      );
+    } catch (err) {
+      if (err.message === "EMAIL_EXISTS") {
         return errorResponse(res, "Email is already registered.", 400);
       }
-      return errorResponse(res, data.error.message, 400);
+      return errorResponse(res, err.message, 400);
     }
 
     const uid = data.localId;
 
-    // Set custom claims
+    // SET CUSTOM CLAIMS
     await adminAuth.setCustomUserClaims(uid, { role: userRole });
 
-    // Simpan user ke Firestore
-    const savedUserData = {
+    // SAVE USER TO FIRESTORE
+    const userPayload = {
       uid,
       email,
       name,
@@ -67,15 +104,13 @@ export const registerUser = async (req, res) => {
       isDeleted: false,
     };
 
-    await adminDb.collection("users").doc(uid).set(savedUserData);
+    await saveUserToFirestore(uid, userPayload);
 
-    // === SYSTEM LOGS ===
-    await adminDb.collection("system_logs").add({
-      action: "REGISTER_USER",
+    // SYSTEM LOG
+    await logSystemEvent("register_user", {
       targetUid: uid,
-      payload: savedUserData, // apa yang disimpan
-      firebaseResponse: data, // respon API Firebase
-      timestamp: new Date().toISOString(),
+      payload: userPayload,
+      firebaseResponse: data,
     });
 
     return successResponse(res, { uid }, "Registration successful.", 201);
@@ -84,7 +119,10 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// LOGIN USER
+/* -------------------------------------------------------------------------- */
+/*                                 📌 LOGIN USER                               */
+/* -------------------------------------------------------------------------- */
+
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
 
@@ -92,37 +130,34 @@ export const loginUser = async (req, res) => {
     return errorResponse(res, "Email and password are required.", 400);
 
   try {
-    const resp = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.FIREBASE_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, returnSecureToken: true }),
-      }
-    );
-
-    const data = await resp.json();
-
-    if (data.error) {
+    // AUTHENTICATE
+    let data;
+    try {
+      data = await firebaseAuthRequest(
+        `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.FIREBASE_API_KEY}`,
+        { email, password, returnSecureToken: true }
+      );
+    } catch (err) {
       return errorResponse(res, "Invalid email or password.", 401);
     }
 
     const uid = data.localId;
 
+    // LOAD USER DATA
     const userDoc = await adminDb.collection("users").doc(uid).get();
     if (!userDoc.exists)
       return errorResponse(res, "User not found in database.", 404);
 
     const userData = userDoc.data();
 
-    if (userData.isDeleted) {
+    if (userData.isDeleted)
       return errorResponse(
         res,
         "This account has been deleted. Please contact admin.",
         403
       );
-    }
 
+    // VERIFY TOKEN & CHECK CLAIM DELETION
     const decodedToken = await adminAuth.verifyIdToken(data.idToken, true);
 
     if (decodedToken.isDeleted === true) {
@@ -133,16 +168,18 @@ export const loginUser = async (req, res) => {
       );
     }
 
-    const roleFromToken = decodedToken.role || userData.role;
+    const role = decodedToken.role || userData.role;
 
-    const responseData = {
-      idToken: data.idToken,
-      refreshToken: data.refreshToken,
-      uid,
-      role: roleFromToken,
-    };
-
-    return successResponse(res, responseData, "Login successful.");
+    return successResponse(
+      res,
+      {
+        idToken: data.idToken,
+        refreshToken: data.refreshToken,
+        uid,
+        role,
+      },
+      "Login successful."
+    );
   } catch (error) {
     return errorResponse(res, `Login failed: ${error.message}`, 500);
   }

@@ -2,18 +2,110 @@
 import { adminDb, adminRtdb } from "../lib/firebaseAdmin.js";
 import { successResponse, errorResponse } from "../utils/responseUtils.js";
 
+/* -------------------------------------------------------------------------- */
+/*                         🔧 Utility Helper Functions                        */
+/* -------------------------------------------------------------------------- */
+
+// Ambil user dari Firestore dan format
+const getUserData = async (userId, fallbackEmail) => {
+  if (!userId) {
+    return {
+      email: fallbackEmail,
+      name: "Unknown User",
+    };
+  }
+
+  try {
+    const userDoc = await adminDb.collection("users").doc(userId).get();
+
+    if (!userDoc.exists) {
+      return {
+        email: fallbackEmail,
+        name: "User Not Found",
+      };
+    }
+
+    const data = userDoc.data();
+    return {
+      email: data.email || fallbackEmail,
+      name: data.name || null,
+      phone: data.phone || null,
+      role: data.role || null,
+      username: data.username || null,
+    };
+  } catch (err) {
+    console.error(`Failed to load user ${userId}:`, err.message);
+    return {
+      email: fallbackEmail,
+      name: "Error Fetching User",
+    };
+  }
+};
+
+// Ambil actor user untuk system_logs
+const getActorData = async (actorUid) => {
+  if (!actorUid) {
+    return {
+      uid: null,
+      name: "Unknown Actor",
+      email: null,
+      role: null,
+    };
+  }
+
+  try {
+    const userDoc = await adminDb.collection("users").doc(actorUid).get();
+    if (!userDoc.exists) {
+      return {
+        uid: actorUid,
+        name: "User Not Found",
+        email: null,
+        role: null,
+      };
+    }
+
+    const u = userDoc.data();
+    return {
+      uid: actorUid,
+      name: u.name || null,
+      email: u.email || null,
+      role: u.role || null,
+      username: u.username || null,
+    };
+  } catch (err) {
+    console.error("Actor fetch error:", err.message);
+    return {
+      uid: actorUid,
+      name: "Error Fetching User",
+      email: null,
+      role: null,
+    };
+  }
+};
+
+/* -------------------------------------------------------------------------- */
+/*                             📌 GET SENSOR LOGS                              */
+/* -------------------------------------------------------------------------- */
+
 export const getSensorLogs = async (req, res) => {
   try {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const now = new Date();
+    const logs = [];
 
-    const snapshot = await adminDb
-      .collection("sensor_logs")
-      .where("timestamp", ">=", sevenDaysAgo.toISOString())
-      .orderBy("timestamp", "desc")
-      .get();
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(now);
+      date.setDate(now.getDate() - i);
+      const dateString = date.toISOString().slice(0, 10);
 
-    if (snapshot.empty) {
+      const docRef = adminDb.collection("sensor_logs").doc(dateString);
+      const doc = await docRef.get();
+
+      if (doc.exists) {
+        logs.push(doc.data());
+      }
+    }
+
+    if (logs.length === 0) {
       return errorResponse(
         res,
         "No sensor data found for the last 7 days.",
@@ -21,33 +113,25 @@ export const getSensorLogs = async (req, res) => {
       );
     }
 
-    const logs = [];
-    snapshot.forEach((doc) => logs.push(doc.data()));
-
-    return successResponse(
-      res,
-      logs,
-      "Sensor data for the last 7 days retrieved successfully."
-    );
+    return successResponse(res, logs, "Sensor logs retrieved successfully.");
   } catch (error) {
     return errorResponse(res, `Failed to retrieve data: ${error.message}`, 500);
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                             📌 RECORD SENSOR LOG                             */
+/* -------------------------------------------------------------------------- */
+
 export const recordSensorLog = async (req, res) => {
   try {
-    // 1. Security Check
-    const authHeader = req.headers.authorization;
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    // Security check
+    if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
       return errorResponse(res, "Unauthorized request", 401);
     }
 
-    const snapshot = await adminRtdb.ref("/iot1").once("value");
-    const data = snapshot.val();
-
-    if (!data) {
-      return errorResponse(res, "No IoT data found in RTDB", 404);
-    }
+    const data = (await adminRtdb.ref("/iot1").once("value")).val();
+    if (!data) return errorResponse(res, "No IoT data found in RTDB", 404);
 
     const currentTemp = data.temp || 0;
     const currentHumid = data.humbd || 0;
@@ -56,31 +140,26 @@ export const recordSensorLog = async (req, res) => {
     const docId = now.toISOString().split("T")[0];
 
     const logRef = adminDb.collection("sensor_logs").doc(docId);
-    const docSnap = await logRef.get();
+    const existingDoc = await logRef.get();
 
-    let finalTemp = currentTemp;
-    let finalHumid = currentHumid;
+    const existing = existingDoc.exists ? existingDoc.data() : {};
 
-    if (docSnap.exists) {
-      const existingData = docSnap.data();
-
-      finalTemp = Math.max(currentTemp, existingData.temp || 0);
-      finalHumid = Math.max(currentHumid, existingData.humidity || 0);
-    }
+    const finalTemp = Math.max(currentTemp, existing.temp || 0);
+    const finalHumid = Math.max(currentHumid, existing.humidity || 0);
 
     await logRef.set(
       {
         temp: finalTemp,
         humidity: finalHumid,
         lastUpdated: now.toISOString(),
-        createdAt: now,
-        docId: docId,
+        createdAt: existing.createdAt || now,
+        docId,
       },
       { merge: true }
     );
 
+    // Delete older than 14 days
     const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-
     const oldLogsSnapshot = await adminDb
       .collection("sensor_logs")
       .where("createdAt", "<", twoWeeksAgo)
@@ -88,18 +167,16 @@ export const recordSensorLog = async (req, res) => {
 
     if (!oldLogsSnapshot.empty) {
       const batch = adminDb.batch();
-      oldLogsSnapshot.docs.forEach((doc) => {
-        if (doc.id !== docId) {
-          batch.delete(doc.ref);
-        }
-      });
+      oldLogsSnapshot.forEach(
+        (doc) => doc.id !== docId && batch.delete(doc.ref)
+      );
       await batch.commit();
     }
 
     return successResponse(
       res,
       {
-        docId: docId,
+        docId,
         savedData: {
           maxTempToday: finalTemp,
           maxHumidToday: finalHumid,
@@ -115,6 +192,10 @@ export const recordSensorLog = async (req, res) => {
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                              📌 GET AUDIT LOGS                               */
+/* -------------------------------------------------------------------------- */
+
 export const getAuditLogs = async (req, res) => {
   try {
     const snapshot = await adminDb
@@ -123,58 +204,19 @@ export const getAuditLogs = async (req, res) => {
       .limit(10)
       .get();
 
-    if (snapshot.empty) {
+    if (snapshot.empty)
       return errorResponse(res, "No audit log data found.", 404);
-    }
 
-    const logsPromises = snapshot.docs.map(async (doc) => {
-      const logData = doc.data();
-      const userId = logData.userId;
+    const logs = await Promise.all(
+      snapshot.docs.map(async (doc) => {
+        const data = doc.data();
+        const originalEmail = data.username;
+        delete data.username;
 
-      const originalEmail = logData.username;
-      delete logData.username;
-
-      if (!userId) {
-        logData.user = {
-          email: originalEmail,
-          name: "Unknown User",
-        };
-        return logData;
-      }
-
-      try {
-        const userDoc = await adminDb.collection("users").doc(userId).get();
-
-        if (userDoc.exists) {
-          const userData = userDoc.data();
-
-          logData.user = {
-            email: userData.email || originalEmail,
-            name: userData.name || null,
-            phone: userData.phone || null,
-            role: userData.role || null,
-            username: userData.username || null,
-          };
-        } else {
-          logData.user = {
-            email: originalEmail,
-            name: "User Not Found",
-          };
-        }
-        return logData;
-      } catch (userError) {
-        console.error(
-          `Failed to fetch user data for userId ${userId}:`,
-          userError.message
-        );
-        logData.user = {
-          email: originalEmail,
-          name: "Error Fetching User",
-        };
-        return logData;
-      }
-    });
-    const logs = await Promise.all(logsPromises);
+        data.user = await getUserData(data.userId, originalEmail);
+        return data;
+      })
+    );
 
     return successResponse(res, logs, "Audit log data retrieved successfully.");
   } catch (error) {
@@ -182,78 +224,36 @@ export const getAuditLogs = async (req, res) => {
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                            📌 GET SYSTEM LOGS                                */
+/* -------------------------------------------------------------------------- */
+
 export const getSystemLogs = async (req, res) => {
   try {
     const limitCount = parseInt(req.query.limit) || 50;
 
-    // Ambil logs terbaru
     const snapshot = await adminDb
       .collection("system_logs")
       .orderBy("timestamp", "desc")
       .limit(limitCount)
       .get();
 
-    if (snapshot.empty) {
+    if (snapshot.empty)
       return errorResponse(res, "No system log data found.", 404);
-    }
 
-    const logsPromises = snapshot.docs.map(async (doc) => {
-      const logData = doc.data();
-      const actorUid =
-        logData.actorUid || logData.deletedBy || logData.createdBy;
+    const logs = await Promise.all(
+      snapshot.docs.map(async (doc) => {
+        const data = doc.data();
 
-      // Hapus raw field agar tidak ganda
-      delete logData.deletedBy;
-      delete logData.createdBy;
+        const actorUid = data.actorUid || data.deletedBy || data.createdBy;
 
-      // Jika tidak ada actorUid → unknown
-      if (!actorUid) {
-        logData.actor = {
-          uid: null,
-          name: "Unknown Actor",
-          email: null,
-          role: null,
-        };
-        return logData;
-      }
+        delete data.deletedBy;
+        delete data.createdBy;
 
-      try {
-        const userDoc = await adminDb.collection("users").doc(actorUid).get();
-
-        if (userDoc.exists) {
-          const userData = userDoc.data();
-          logData.actor = {
-            uid: actorUid,
-            name: userData.name || null,
-            email: userData.email || null,
-            role: userData.role || null,
-            username: userData.username || null,
-          };
-        } else {
-          logData.actor = {
-            uid: actorUid,
-            name: "User Not Found",
-            email: null,
-            role: null,
-          };
-        }
-      } catch (err) {
-        console.error(
-          `Failed to fetch actor user data for ${actorUid}:`,
-          err.message
-        );
-        logData.actor = {
-          uid: actorUid,
-          name: "Error Fetching User",
-          email: null,
-          role: null,
-        };
-      }
-
-      return logData;
-    });
-
-    const logs = await Promise.all(logsPromises);
+        data.actor = await getActorData(actorUid);
+        return data;
+      })
+    );
 
     return successResponse(
       res,

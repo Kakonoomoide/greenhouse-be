@@ -2,22 +2,55 @@
 import { adminDb, adminAuth } from "../lib/firebaseAdmin.js";
 import { successResponse, errorResponse } from "../utils/responseUtils.js";
 
+/* -------------------------------------------------------------------------- */
+/*                                🔧 Helpers                                   */
+/* -------------------------------------------------------------------------- */
+
+const getUserDoc = async (uid) => {
+  const doc = await adminDb.collection("users").doc(uid).get();
+  if (!doc.exists) return null;
+  return doc.data();
+};
+
+const isUsernameTakenByOthers = async (username, uid) => {
+  const snapshot = await adminDb
+    .collection("users")
+    .where("username", "==", username)
+    .get();
+
+  if (snapshot.empty) return false;
+
+  const user = snapshot.docs[0].data();
+  return user.uid !== uid;
+};
+
+const logSystemEvent = async (action, extra = {}) => {
+  await adminDb.collection("system_logs").add({
+    action,
+    timestamp: new Date().toISOString(),
+    ...extra,
+  });
+};
+
+/* -------------------------------------------------------------------------- */
+/*                          📌 GET USER PROFILE                                */
+/* -------------------------------------------------------------------------- */
+
 export const getUserProfile = async (req, res) => {
   try {
-    const userDocRef = adminDb.collection("users").doc(req.user.uid);
-    const userDoc = await userDocRef.get();
+    const user = await getUserDoc(req.user.uid);
 
-    if (!userDoc.exists) return errorResponse(res, "User not found.", 404);
+    if (!user) return errorResponse(res, "User not found.", 404);
 
-    return successResponse(
-      res,
-      userDoc.data(),
-      "Profile retrieved successfully."
-    );
+    return successResponse(res, user, "Profile retrieved successfully.");
   } catch (error) {
     return errorResponse(res, `Failed to fetch profile: ${error.message}`, 500);
   }
 };
+
+/* -------------------------------------------------------------------------- */
+/*                          📌 CHANGE PASSWORD                                 */
+/* -------------------------------------------------------------------------- */
 
 export const changePassword = async (req, res) => {
   const { uid } = req.user;
@@ -32,9 +65,7 @@ export const changePassword = async (req, res) => {
   }
 
   try {
-    await adminAuth.updateUser(uid, {
-      password: newPassword,
-    });
+    await adminAuth.updateUser(uid, { password: newPassword });
 
     return successResponse(res, null, "Password changed successfully.");
   } catch (error) {
@@ -46,32 +77,27 @@ export const changePassword = async (req, res) => {
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                          📌 UPDATE USER PROFILE                              */
+/* -------------------------------------------------------------------------- */
+
 export const updateUserProfile = async (req, res) => {
   const { uid } = req.user;
   const { name, username, noTelp } = req.body;
 
-  const dataToUpdate = {};
-  if (name) dataToUpdate.name = name;
-  if (noTelp !== undefined) dataToUpdate.phone = noTelp || "";
-  if (username) dataToUpdate.username = username;
+  const dataToUpdate = {
+    ...(name && { name }),
+    ...(noTelp !== undefined && { phone: noTelp || "" }),
+    ...(username && { username }),
+  };
 
   if (Object.keys(dataToUpdate).length === 0) {
     return errorResponse(res, "No data provided for update.", 400);
   }
 
   try {
-    if (username) {
-      const usernameQuery = await adminDb
-        .collection("users")
-        .where("username", "==", username)
-        .get();
-
-      if (!usernameQuery.empty) {
-        const existingUser = usernameQuery.docs[0].data();
-        if (existingUser.uid !== uid) {
-          return errorResponse(res, "Username is already taken.", 400);
-        }
-      }
+    if (username && (await isUsernameTakenByOthers(username, uid))) {
+      return errorResponse(res, "Username is already taken.", 400);
     }
 
     await adminDb.collection("users").doc(uid).update(dataToUpdate);
@@ -86,15 +112,15 @@ export const updateUserProfile = async (req, res) => {
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                          📌 GET ALL USERS                                   */
+/* -------------------------------------------------------------------------- */
+
 export const getAllUsers = async (req, res) => {
   try {
-    const usersSnapshot = await adminDb.collection("users").get();
+    const snapshot = await adminDb.collection("users").get();
 
-    if (usersSnapshot.empty) {
-      return successResponse(res, [], "No users found.");
-    }
-
-    const users = usersSnapshot.docs.map((doc) => ({
+    const users = snapshot.docs.map((doc) => ({
       uid: doc.id,
       ...doc.data(),
     }));
@@ -105,39 +131,44 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                         📌 SOFT DELETE USER                                 */
+/* -------------------------------------------------------------------------- */
+
 export const softDeleteUser = async (req, res) => {
   const { uid } = req.params;
 
   try {
-    const userDoc = await adminDb.collection("users").doc(uid).get();
-    if (!userDoc.exists) {
-      return errorResponse(res, "User not found.", 404);
-    }
-
-    const userData = userDoc.data();
+    const userData = await getUserDoc(uid);
+    if (!userData) return errorResponse(res, "User not found.", 404);
 
     if (userData.isDeleted) {
       return errorResponse(res, "User already deleted.", 400);
     }
+
+    // SAVE TO deleted_users
+    const timestamp = new Date().toISOString();
+    const actorUid = req.user.uid;
 
     await adminDb
       .collection("deleted_users")
       .doc(uid)
       .set({
         ...userData,
-        deletedAt: new Date().toISOString(),
-        deletedBy: req.user.uid,
+        deletedAt: timestamp,
+        deletedBy: actorUid,
       });
 
+    // UPDATE ORIGINAL USER
     await adminDb.collection("users").doc(uid).update({
       isDeleted: true,
-      deletedAt: new Date().toISOString(),
+      deletedAt: timestamp,
     });
 
-    await adminDb.collection("system_logs").add({
-      action: "SOFT_DELETE_USER",
+    // LOG
+    await logSystemEvent("soft_delete_user", {
       targetUid: uid,
-      actorUid: req.user.uid,
+      actorUid,
       payload: {
         email: userData.email,
         name: userData.name,
@@ -145,7 +176,6 @@ export const softDeleteUser = async (req, res) => {
         phone: userData.phone || null,
         role: userData.role,
       },
-      timestamp: new Date().toISOString(),
     });
 
     return successResponse(res, null, "User soft deleted successfully.");
