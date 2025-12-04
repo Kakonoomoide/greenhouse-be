@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import allRoutes from "../routes/index.js";
+import healthRoutes from "../routes/healthRoutes.js";
 
 dotenv.config();
 
@@ -13,6 +14,7 @@ app.use(express.json());
 
 // Pasang semua routes
 app.use("/api", allRoutes);
+app.use("/", healthRoutes);
 
 // Error handling middleware
 app.use((err, res) => {

@@ -7,6 +7,7 @@ import logsRoutes from "./logsRoutes.js";
 
 const router = Router();
 
+// Mount other route modules
 router.use("/", authRoutes);
 router.use("/", userRoutes);
 router.use("/iot", iotRoutes);
