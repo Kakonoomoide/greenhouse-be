@@ -1,8 +1,11 @@
 // src/routes/healthRoutes.js
 import { Router } from "express";
+import dayjs from "dayjs";
+import pkg from "../package.json" with { type: "json" };
 
 const router = Router();
-const API_VERSION = "1.1.1"; // Bisa ambil dari versioning.js/json
+const API_VERSION = pkg.version;
+const timestamp = dayjs().format("YYYY-MM-DD HH:mm:ss");
 
 router.get("/", (req, res) => {
   const uptimeInSec = process.uptime();
@@ -11,7 +14,7 @@ router.get("/", (req, res) => {
     message: "🌱 Smart Farm IoT API is running! 🚀",
     version: API_VERSION,
     uptime: `${Math.floor(uptimeInSec)} seconds`,
-    timestamp: new Date().toISOString(),
+    timestamp: timestamp,
     data: null,
   });
 });
