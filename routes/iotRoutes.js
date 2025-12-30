@@ -6,8 +6,13 @@ import {
   setBlowerStatus,
   getIotConfig,
   setMaxTemp,
+  logBlowerEvent,
 } from "../controllers/iotController.js";
-import { checkAuth, checkIsAdmin } from "../middleware/authMiddleware.js";
+import {
+  checkAuth,
+  checkIsAdmin,
+  checkIotSecret,
+} from "../middleware/authMiddleware.js";
 
 const router = Router();
 
@@ -19,5 +24,6 @@ router.get("/config", checkAuth, getIotConfig);
 router.post("/automation", checkAuth, setAutomationStatus);
 router.post("/blower", checkAuth, setBlowerStatus);
 router.post("/maxtemp", checkAuth, checkIsAdmin, setMaxTemp);
+router.post("/blower/log", checkIotSecret, logBlowerEvent);
 
 export default router;

@@ -39,7 +39,32 @@ const addAuditLog = async (action, newValue, user) => {
 
 export const getIotStatus = async (req, res) => {
   try {
-    const data = await readRtdb("/iot1");
+    const deviceKeys = ["iot1", "iot2", "iot3"];
+
+    // Ambil semua device sekaligus
+    const devicesArray = await Promise.all(
+      deviceKeys.map((key) => readRtdb(`/${key}`))
+    );
+
+    const devices = Object.fromEntries(
+      deviceKeys.map((key, index) => [key, devicesArray[index]])
+    );
+
+    const avg = (key) =>
+      Number(
+        (
+          devicesArray.reduce((sum, d) => sum + (Number(d[key]) || 0), 0) /
+          devicesArray.length
+        ).toFixed(2)
+      );
+
+    const data = {
+      devices,
+      average: {
+        temp: avg("temp"),
+        humbd: avg("humbd"),
+      },
+    };
 
     return successResponse(res, data, "IoT data retrieved successfully.");
   } catch (err) {
@@ -145,5 +170,39 @@ export const setBlowerStatus = async (req, res) => {
     );
   } catch (err) {
     return errorResponse(res, `Failed to update blower: ${err.message}`, 500);
+  }
+};
+
+/* -------------------------------------------------------------------------- */
+/*                   📌 IoT Logging endpoint (ESP32 → API)                    */
+/* -------------------------------------------------------------------------- */
+
+export const logBlowerEvent = async (req, res) => {
+  try {
+    const { status, trigger, temperature } = req.body;
+
+    if (typeof status !== "boolean") {
+      return errorResponse(res, 'Invalid "status": must be boolean', 400);
+    }
+
+    // Optional validation
+    if (trigger && typeof trigger !== "string") {
+      return errorResponse(res, '"trigger" must be a string', 400);
+    }
+
+    // Simpan ke Firestore
+    await addAuditLog(
+      "blower_event",
+      { status, trigger, temperature },
+      { uid: "iot_device", name: "IoT Device" }
+    );
+
+    return successResponse(res, {}, "Blower event logged.");
+  } catch (err) {
+    return errorResponse(
+      res,
+      `Failed to log blower event: ${err.message}`,
+      500
+    );
   }
 };

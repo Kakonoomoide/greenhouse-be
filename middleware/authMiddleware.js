@@ -66,3 +66,25 @@ export const checkIsAdmin = (req, res, next) => {
   }
   next();
 };
+
+/* -------------------------------------------------------------------------- */
+/*                          📌 CHECK IOT SECRET                               */
+/* -------------------------------------------------------------------------- */
+export const checkIotSecret = (req, res, next) => {
+  const header = req.headers.authorization;
+
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "Missing Authorization header." });
+  }
+
+  const token = header.split(" ")[1];
+
+  if (token !== process.env.IOT_SECRET) {
+    return res.status(401).json({ message: "Unauthorized IoT request." });
+  }
+
+  // We can attach the device name if needed
+  req.device = { id: "esp32-greenhouse-01" };
+
+  next();
+};
